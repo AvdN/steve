@@ -19,6 +19,12 @@ from urlparse import urlparse
 
 import html2text
 
+import ruamel.yaml as yaml
+
+
+def yaml_load(s):
+    return yaml.load(s, Loader=yaml.RoundTripLoader)
+
 
 def is_youtube(url):
     parsed = urlparse(url)
@@ -41,18 +47,137 @@ class ConfigNotFound(SteveException):
     pass
 
 
+class NoOptionError(SteveException):
+    """Denotes we could not find option in section"""
+    pass
+
+
 class Config(object):
+    """base class for configuration file handling classes
+
+    Each derived class should:
+    - have a file_name class attribute
+    - implement load()
+    - implement get(section, key)
+    - provice string attribute _CONFIG as new file template
+    """
+
+    default_status = 'status.yaml'
+
     def __init__(self):
         self._file_name = None
+        self._project_path = None
 
-    def initialise(self):
-        raise NotImplementedError
+    @property
+    def project_path(self):
+        """find the project config file in the current or parent directory"""
+        if self._project_path is None:
+            projectpath = os.getcwd()
+            path = os.path.join(projectpath, self.file_name)
+            if not os.path.exists(path):
+                # if not found try the parent directory for configuration file
+                projectpath = os.path.dirname(projectpath)
+                path = os.path.join(projectpath, self.file_name)
+                if not os.path.exists(path):
+                    raise ConfigNotFound('{0} could not be found.'.format(self.file_name))
+            self._project_path = projectpath
+        return self._project_path
+
+    @property
+    def project_file(self):
+        """returns the full project filename depending on the selected Config subclass"""
+        return os.path.join(self.project_path, self.file_name)
 
     def load(self):
         raise NotImplementedError
 
     def get(self, section, key):
         raise NotImplementedError
+
+    def create(self, dir_path):
+        """create the config file for the project"""
+        abs_path = os.path.abspath(dir_path)
+        kw = dict(
+            projectpath=abs_path,
+            jsonpath=os.path.join(abs_path, 'json'),
+            yamlpath=os.path.join(abs_path, 'yaml'),
+            status=self.default_status,
+        )
+        with open(os.path.join(dir_path, self.file_name), 'w') as fp:
+            fp.write(self._CONFIG.format(**kw))
+
+    @property
+    def status(self):
+        """retrieve status information"""
+        sfn = self.status_file_name
+        if os.path.exists(sfn):
+            return yaml_load(open(sfn))
+        return yaml_load(textwrap.dedent("""\
+        # status file for yaml
+        yaml:
+        last_sync: 2000-01-01 00:00:00
+        """))
+
+    @property
+    def status_file_name(self):
+        try:
+            res = self.get('project', 'status')
+        except NoOptionError:
+            res = self.default_status
+        return os.path.join(self.project_path, res)
+
+    def _load(self):
+        """Manipulate loaded config file to provide extra/missing information."""
+        self.patch_in_missing_keys()
+        self.try_load_cred()
+
+    def patch_in_missing_keys(self):
+        # TODO: This is a little dirty since we're inserting stuff into
+        # the config file if it's not there, but so it goes.
+        try:
+            self.get('project', 'projectpath')
+        except NoOptionError:
+            self.set('project', 'projectpath', self.project_path)
+        try:
+            self.get('project', 'jsonpath')
+        except NoOptionError:
+            self.set('project', 'jsonpath',
+                     os.path.join(self.get('project', 'projectpath'), 'json'))
+        try:
+            self.get('project', 'yamlpath')
+        except NoOptionError:
+            self.set('project', 'yamlpath',
+                     os.path.join(self.get('project', 'projectpath'), 'yaml'))
+
+    def try_load_cred(self):
+        # If STEVE_CRED_FILE is specified in the environment or there's a
+        # cred_file in the config file, then open the file and pull the
+        # API information from there:
+        #
+        # * api_url
+        # * username
+        # * api_key
+        #
+        # This allows people to have a whole bunch of steve project
+        # directories and store their credentials in a central location.
+        cred_file = None
+        try:
+            cred_file = os.environ['STEVE_CRED_FILE']
+        except KeyError:
+            try:
+                cred_file = self.get('project', 'cred_file')
+            except NoOptionError:
+                pass
+
+        if cred_file:
+            cred_file = os.path.abspath(cred_file)
+
+            if os.path.exists(cred_file):
+                cfp = ConfigParser.ConfigParser()
+                cfp.read(cred_file)
+                self.set('project', 'api_url', cfp.get('default', 'api_url'))
+                self.set('project', 'username', cfp.get('default', 'username'))
+                self.set('project', 'api_key', cfp.get('default', 'api_key'))
 
 
 class IniConfig(Config):
@@ -69,61 +194,20 @@ class IniConfig(Config):
         :returns: config file
 
         """
-        # TODO: Should we support parent directories, too?
-        projectpath = os.getcwd()
-        path = os.path.join(projectpath, 'steve.ini')
-        if not os.path.exists(path):
-            projectpath = os.path.dirname(projectpath)
-            path = os.path.join(projectpath, 'steve.ini')
-            if not os.path.exists(path):
-                raise ConfigNotFound('steve.ini could not be found.')
-
-        self._data = cp = ConfigParser.ConfigParser()
-        cp.read(path)
-
-        # TODO: This is a little dirty since we're inserting stuff into
-        # the config file if it's not there, but so it goes.
-        try:
-            cp.get('project', 'projectpath')
-        except ConfigParser.NoOptionError:
-            cp.set('project', 'projectpath', projectpath)
-        try:
-            cp.get('project', 'jsonpath')
-        except ConfigParser.NoOptionError:
-            cp.set('project', 'jsonpath', os.path.join(cp.get('project', 'projectpath'), 'json'))
-        # If STEVE_CRED_FILE is specified in the environment or there's a
-        # cred_file in the config file, then open the file and pull the
-        # API information from there:
-        #
-        # * api_url
-        # * username
-        # * api_key
-        #
-        # This allows people to have a whole bunch of steve project
-        # directories and store their credentials in a central location.
-        cred_file = None
-        try:
-            cred_file = os.environ['STEVE_CRED_FILE']
-        except KeyError:
-            try:
-                cred_file = cp.get('project', 'cred_file')
-            except ConfigParser.NoOptionError:
-                pass
-
-        if cred_file:
-            cred_file = os.path.abspath(cred_file)
-
-            if os.path.exists(cred_file):
-                cfp = ConfigParser.ConfigParser()
-                cfp.read(cred_file)
-                cp.set('project', 'api_url', cfp.get('default', 'api_url'))
-                cp.set('project', 'username', cfp.get('default', 'username'))
-                cp.set('project', 'api_key', cfp.get('default', 'api_key'))
-
+        self._data = ConfigParser.ConfigParser()
+        self._data.read(self.project_file)
+        super(IniConfig, self)._load()
         return self
 
     def get(self, section, key):
-        return self._data.get(section, key)
+        try:
+            return self._data.get(section, key)
+        except ConfigParser.NoOptionError:
+            raise NoOptionError("No option '{1}' in section '{0}'".format(
+                section, key))
+
+    def set(self, section, key, value):
+        self._data.set(section, key, value)
 
     _CONFIG = textwrap.dedent("""\
     [project]
@@ -155,17 +239,75 @@ class IniConfig(Config):
     # api_key =
     """)
 
-    def create(self, dir_path):
-        abs_path = os.path.abspath(dir_path)
-        kw = dict(
-            projectpath=abs_path,
-            jsonpath=os.path.join(abs_path, 'json')
-        )
-        with open(os.path.join(dir_path, self.file_name), 'w') as fp:
-            fp.write(self._CONFIG.format(**kw))
+
+class YamlConfig(Config):
+    file_name = 'steve.yaml'
+
+    def __init__(self):
+        super(YamlConfig, self).__init__()
+
+    def load(self):
+        """Finds and opens the config file in the current directory
+
+        :raises ConfigNotFound: if the config file can't be found
+
+        :returns: config file
+
+        """
+        self._data = yaml_load(open(self.project_file))
+        super(YamlConfig, self)._load()
+
+        return self
+
+    def get(self, section, key):
+        try:
+            # this assumes the section is there
+            return self._data[section][key]
+        except KeyError:
+            raise NoOptionError("No option '{1}' in section '{0}'".format(
+                section, key))
+
+    def set(self, section, key, value):
+        self._data[section][key] = value
+
+    _CONFIG = textwrap.dedent("""\
+    project:
+      # The name of this group of videos. For example, if this was a conference
+      # called EuroPython 2011, then you'd put:
+      # category: EuroPython 2011
+      category:
+
+      # The url for where all the videos are listed.
+      # e.g. url: http://www.youtube.com/user/PythonItalia/videos
+      url:
+
+      # The projectpath is where steve assumes subdirs if not explitly set
+      # projectpath: {projectpath}
+      # The jsonpath, if set, is where steve will look for the JSON files
+      # jsonpath: {jsonpath}
+      # The yamlpath, if set, is where steve will look for the YAML files
+      # yamlpath: {yamlpath}
+
+      # name of status file in project directory (should not be steve.yaml)
+      # status: {status}
+
+      # The url for the richard instance api.
+      # e.g. url: http://example.com/api/v1/
+      api_url:
+
+      # Your username and api key.
+      # e.g. username: willkg
+      #      api_key: OU812
+      # username:
+      # api_key:
+      #
+      # Alternatively, you can pass this on the command line or put it in a
+      # separate API_KEY file which you can keep out of version control.
+      # cred_file:
+    """)
 
 
-SteveConfig = IniConfig   # to allow easy switching in the future
+SteveConfig = YamlConfig   # this is used for creation
 
 
 def with_config(fun):
@@ -189,7 +331,7 @@ def with_config(fun):
     >>> config_printer()  # if it didn't find a config
     Traceback
         ...
-    steve.util.ConfigNotFound: steve.ini could not be found.
+    steve.util.ConfigNotFound: steve config file could not be found.
     """
     @wraps(fun)
     def _with_config(*args, **kw):
@@ -206,7 +348,18 @@ def get_project_config():
     :returns: config file
 
     """
-    return SteveConfig().load()
+    try:
+        return SteveConfig().load()
+    except ConfigNotFound as e:
+        try:
+            for cfg in [IniConfig, YamlConfig]:
+                if cfg == SteveConfig:
+                    continue  # already tried
+                return cfg().load()
+        except ConfigNotFound:
+            pass
+        raise e   # originally raised error for default format
+    assert False
 
 
 def get_project_config_file_name():
@@ -216,18 +369,18 @@ def get_project_config_file_name():
     return SteveConfig.file_name
 
 
-def create_project_config_file(dir_path):
+def create_project_config_file(dir_path, cfg=SteveConfig):
     """Creates a new config file in directory
 
     :param dir_path: directory in which to create the config file
+    :param cfg:      if set alternative from default SteveConfig
 
-    :returns: config file basename
     """
-    SteveConfig().create(dir_path)
+    cfg().create(dir_path)
 
 
 def get_from_config(cfg, key, section='project',
-                    error='"{key}" must be defined in steve.ini file.'):
+                    error='"{key}" must be defined in {name} file.'):
     """Retrieves specified key from config or errors
 
     :arg cfg: the configuration
@@ -242,10 +395,10 @@ def get_from_config(cfg, key, section='project',
         value = cfg.get(section, key)
         if value:
             return value.strip()
-    except ConfigParser.NoOptionError:
+    except NoOptionError:
         pass
 
-    err(error.format(key=key))
+    err(error.format(key=key, name=get_project_config_file_name()))
     return None
 
 
@@ -270,7 +423,7 @@ def load_tags_file(config):
     projectpath = config.get('project', 'projectpath')
     try:
         tagsfile = config.get('project', 'tagsfile')
-    except ConfigParser.NoOptionError:
+    except NoOptionError:
         tagsfile = 'tags.txt'
 
     tagsfile = os.path.join(projectpath, tagsfile)
@@ -319,9 +472,9 @@ def verify_video_data(data, category=None):
 
     :param data: The parsed contents of a JSON file. This should be a
         Python dict.
-    :param category: The category as specified in the steve.ini file.
+    :param category: The category as specified in the steve config file.
 
-        If the steve.ini has a category, then every data file either
+        If the steve config has a category, then every data file either
         has to have the same category or no category at all.
 
         This is None if no category is specified in which case every
@@ -341,16 +494,16 @@ def verify_video_data(data, category=None):
 
         if key == 'category':
             # Category is a special case since we can specify it
-            # in the steve.ini file.
+            # in the steve config file.
 
             if not category and key not in data:
                 errors.append(
-                    '"category" must be in either steve.ini or data file')
+                    '"category" must be in either steve config or data file')
             elif (key in data and (
                     category is not None and data[key] != category)):
                 errors.append(
-                    '"{0}" field does not match steve.ini category'.format(
-                        key))
+                    '"{0}" field does not match steve config category [{1}]'.format(
+                        key, category))
 
         elif key not in data:
             # Required data must be there.
@@ -415,9 +568,9 @@ def verify_json_files(json_files, category=None):
     :param json_files: list of (filename, parsed json data) tuples to
         call :py:func:`verify_video_data` on
 
-    :param category: The category as specified in the steve.ini file.
+    :param category: The category as specified in the steve config file.
 
-        If the steve.ini has a category, then every data file either
+        If the steve config has a category, then every data file either
         has to have the same category or no category at all.
 
         This is None if no category is specified in which case every

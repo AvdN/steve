@@ -4,7 +4,7 @@ from unittest import TestCase
 from click.testing import CliRunner
 
 from steve.cmdline import cli
-
+from steve.util import SteveConfig
 
 # helpful for testing command line stuff
 #
@@ -34,7 +34,7 @@ class CreateprojectTestCase(TestCase):
 
             result = runner.invoke(cli, ('createproject', 'testprj'))
             assert result.exit_code == 0
-            assert os.path.exists(os.path.join(path, 'testprj', 'steve.ini'))
+            assert os.path.exists(os.path.join(path, 'testprj', SteveConfig.file_name))
 
     def test_directory_already_exists(self):
         runner = CliRunner()

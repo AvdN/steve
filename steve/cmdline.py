@@ -6,7 +6,6 @@
 # license.
 #######################################################################
 
-import ConfigParser
 import os
 import sys
 import traceback
@@ -26,6 +25,7 @@ from steve.util import (
     get_project_config,
     get_project_config_file_name,
     load_json_files,
+    NoOptionError,
     save_json_file,
     save_json_files,
     scrape_video,
@@ -119,7 +119,7 @@ def fetch(cfg, ctx, quiet, force):
 
     try:
         url = cfg.get('project', 'url')
-    except ConfigParser.NoOptionError:
+    except NoOptionError:
         url = ''
 
     if not url:
@@ -287,7 +287,7 @@ def push(cfg, ctx, quiet, apikey, update, overwrite, files):
     if not apikey:
         try:
             apikey = cfg.get('project', 'api_key')
-        except ConfigParser.NoOptionError:
+        except NoOptionError:
             pass
     if not apikey:
         raise click.ClickException(
@@ -330,7 +330,7 @@ def push(cfg, ctx, quiet, apikey, update, overwrite, files):
             )
         else:
             click.echo('Category {0} exists on site.'.format(category))
-    except ConfigParser.NoOptionError:
+    except NoOptionError:
         category = None
 
     errors = []
@@ -446,7 +446,7 @@ def pull(cfg, ctx, quiet, apikey):
     if not apikey:
         try:
             apikey = cfg.get('project', 'api_key')
-        except ConfigParser.NoOptionError:
+        except NoOptionError:
             pass
     if not apikey:
         raise click.ClickException(

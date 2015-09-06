@@ -47,6 +47,7 @@ setup(
         'pytest',
         'tabulate',
         'youtube-dl',
+        'ruamel.yaml',
     ],
     entry_points="""
         [console_scripts]

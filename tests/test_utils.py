@@ -6,14 +6,24 @@
 # license.
 #######################################################################
 
+import os
 from unittest import TestCase
 
+import pytest
+from click.testing import CliRunner
+
 from steve.util import (
+    ConfigNotFound,
+    create_project_config_file,
+    get_project_config,
     get_video_id,
     html_to_markdown,
+    IniConfig,
     is_youtube,
+    NoOptionError,
     SteveException,
     verify_video_data,
+    YamlConfig,
 )
 
 
@@ -165,3 +175,32 @@ def test_get_video_id():
             assert False
         except SteveException:
             pass
+
+
+# @pytest.mark.parametrize(("config", ), [IniConfig, YamlConfig, ])
+@pytest.mark.parametrize(("config", ), [
+    (IniConfig, ),
+    (YamlConfig, ),
+])
+class TestConfig:
+    def test_ini_config_creation(self, config):
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            path = os.getcwd()
+
+            with pytest.raises(ConfigNotFound):
+                get_project_config()
+            # Create the project directory
+            create_project_config_file(path, config)
+            cfg = get_project_config()
+
+            assert os.path.exists(config.file_name)
+            tmp_dir = 'tmp'
+            os.mkdir(tmp_dir)
+            os.chdir(tmp_dir)
+            cfg2 = get_project_config()
+            os.chdir(path)
+            assert cfg.get('project', 'jsonpath') == cfg2.get('project', 'jsonpath')
+
+            with pytest.raises(NoOptionError):
+                cfg.get('project', 'xmlpath')
