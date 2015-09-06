@@ -67,6 +67,7 @@ class Config(object):
     def __init__(self):
         self._file_name = None
         self._project_path = None
+        self._status = None
 
     @property
     def project_path(self):
@@ -109,14 +110,17 @@ class Config(object):
     @property
     def status(self):
         """retrieve status information"""
-        sfn = self.status_file_name
-        if os.path.exists(sfn):
-            return yaml_load(open(sfn))
-        return yaml_load(textwrap.dedent("""\
-        # status file for yaml
-        yaml:
-        last_sync: 2000-01-01 00:00:00
-        """))
+        if self._status is None:
+            sfn = self.status_file_name
+            if os.path.exists(sfn):
+                self._status = yaml_load(open(sfn))
+            else:
+                self._status = yaml_load(textwrap.dedent("""\
+                # status file for yaml
+                yaml:
+                  last_sync: 2000-01-01 00:00:00
+                """))
+        return self._status
 
     @property
     def status_file_name(self):
@@ -125,6 +129,12 @@ class Config(object):
         except NoOptionError:
             res = self.default_status
         return os.path.join(self.project_path, res)
+
+    def save_status(self):
+        with open(self.status_file_name, 'w') as fp:
+            yaml.dump(self.status, fp,
+                      Dumper=yaml.RoundTripDumper,
+                      allow_unicode=True)
 
     def _load(self):
         """Manipulate loaded config file to provide extra/missing information."""

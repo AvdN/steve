@@ -28,6 +28,7 @@ User/Contributor Guide
    license
    installation
    commandline
+   sync
    library
    restapi
    richardapi

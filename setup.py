@@ -48,6 +48,7 @@ setup(
         'tabulate',
         'youtube-dl',
         'ruamel.yaml',
+        'ruamel.yaml.convert',
     ],
     entry_points="""
         [console_scripts]

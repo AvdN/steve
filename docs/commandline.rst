@@ -87,46 +87,52 @@ Example use
 
    In that directory is:
 
-   1. a ``steve.ini`` project config file
-   2. a ``json/`` directory which hold the video metadata json files
-
+   1. a ``steve.yaml`` project config file
+   
+   Later on a ``json/`` and a ``yaml/`` directory which hold the video
+   metadata JSON/YAML files are created.
 
    I usually have all my helper scripts in the project directory since
    it has the ``steve.ini`` file.
 
 3. ``cd europython2011``
 
-4. Edit ``steve.ini``::
+4. Edit ``steve.yaml``::
 
-       [project] 
-
-       # The name of this group of videos. For example, if this was a
-       # conference called EuroPython 2011, then you'd put:
-       # category = EuroPython 2011
-       category = EuroPython 2011
-
-       # The url for where all the videos are listed.
-       # e.g. url = http://www.youtube.com/user/PythonItalia/videos
-       url = http://www.youtube.com/user/PythonItalia/videos
-
-       # If the url is a YouTube-based url, you can either have 'object'
-       # based embed code or 'iframe' based embed code. Specify that
-       # here.
-       youtube_embed = object
-
-       # The url for the richard instance api.
-       # e.g. url = http://example.com/api/v1/
-       # api_url =
-
-       # Your username and api key.
-       #
-       # Alternatively, you can pass this on the command line or put it in a
-       # separate API_KEY file which you can keep out of version control.
-       # e.g. username = willkg
-       #      api_key = OU812
-       # username =
-       # api_key =
-
+    project:
+      # The name of this group of videos. For example, if this was a conference
+      # called EuroPython 2011, then you'd put:
+      # category: EuroPython 2011
+      category: 
+    
+      # The url for where all the videos are listed.
+      # e.g. url: http://www.youtube.com/user/PythonItalia/videos
+      url: 
+    
+      # The projectpath is where steve assumes subdirs if not explitly set
+      # projectpath: /data1/src/pyvideo.steve/tmp
+      # The jsonpath, if set, is where steve will look for the JSON files
+      # jsonpath: /data1/src/pyvideo.steve/tmp/json
+      # The yamlpath, if set, is where steve will look for the YAML files
+      # yamlpath: /data1/src/pyvideo.steve/tmp/yaml
+    
+      # name of status file in project directory (should not be steve.yaml)
+      # status: status.yaml
+    
+      # The url for the richard instance api.
+      # e.g. url: http://example.com/api/v1/
+      api_url:
+    
+      # Your username and api key.
+      # e.g. username: willkg
+      #      api_key: OU812
+      # username:
+      # api_key:
+      #
+      # Alternatively, you can pass this on the command line or put it in a
+      # separate API_KEY file which you can keep out of version control.
+      # cred_file:
+    
 
    If you're not pushing the JSON files to a richard instance, you can
    ignore the ``api_url``, ``username`` and ``api_key`` keys.
@@ -135,25 +141,33 @@ Example use
 
    This fetches the video metadata from that YouTube user and
    generates a series of JSON files---one for each video---and puts
-   them in the ``json/`` directory.
+   them in the ``json/`` directory the command creates if necessary.
 
    The format for each file matches the format expected by the richard
    API.
 
-6. See the status of your video metadata.
+6. Run: ``steve-cmd sync``
+
+   This creates the ``yaml/`` directory and creates YAML metadata
+   files for all JSON files. It also creates/update ``status.yaml`` to
+   hold a time-stamp of the last sync action.
+
+7. See the status of your video metadata.
 
    Run: ``steve-cmd status``
 
    Lists filenames for all videos that have a non-empty whiteboard
    field. Because you've just downloaded the metadata, all of the
    videos have a whiteboard field stating they haven't been edited,
-   yet.
+   yet. 
+   *This currently works on the JSON files, ``sync`` beforehand if necessary.*
 
    Run: ``steve-cmd ls``
 
    Lists titles and some other data for each video in the set.
+   *This currently works on the JSON files, ``sync`` beforehand if necessary.*
 
-7. Now you go through and edit the json metadata. There are a few ways
+8. Now you go through and edit the json or yaml metadata. There are a few ways
    to do this. **Don't** just pick one way---mix and match them to
    reduce the work required.
 
@@ -234,11 +248,38 @@ Example use
       This is helpful when you have a few things to fix and don't feel
       like writing json.
 
+   4. **Edit the combined YAML files**
+
+      the command::
+
+          steve-cmd yaml
+ 
+      will create a temporary YAML file with all of the combined YAML
+      file information. It then starts your editor ($EDITOR). After
+      quiting the editor those files which were edited are used to
+      overwrite the individual YAML files (based on filename and hash
+      information included in initial comments).
+    
+   5. **Combine and split YAML files**
+
+      You can use other tools than your default editor on the temporary
+      combined YAML file by specifying::
+
+          EDITOR=/path/to/command steve-cmd yaml
+
+      You can also combine the YAML files into a file you specify::
+
+          steve-cmd yaml --name some_name.yaml --combine
+
+      run your command on that and then split them into the individual
+      files::
+
+          steve-cmd yaml --name some_name.yaml --split
 
    If there are other tools you want to use---go for it. Anything
    to get the job done.
 
-8. Run: ``steve-cmd verify``
+9. Run: ``steve-cmd verify``
 
    This goes through all the json files and verifies correctness.
 
@@ -248,7 +289,9 @@ Example use
 
    Are values that should be in HTML in HTML?
 
-9. Now it's time to submit your changes!
+   *This currently works on the JSON files, ``sync`` beforehand if necessary.*
+
+10. Now it's time to submit your changes!
 
    If you do not have an API key that gives you write access to the server,
    then tar the ``json/`` directory up and send it to someone who does.
@@ -260,7 +303,8 @@ Example use
 
    That will create the videos on the server and update the JSON
    files with the new ids.
-
+   Be sure to run ``steve-cmd sync`` before pushing if you edit the
+   metadata in the YAML files.
 
 That's it!
 

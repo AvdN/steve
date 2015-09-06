@@ -35,6 +35,7 @@ from steve.util import (
     with_config,
 )
 from steve.webedit import serve
+from steve.yamldata import YAML_Data
 
 
 BYLINE = ('steve-cmd: {0} ({1}).'.format(steve.__version__,
@@ -498,6 +499,41 @@ def pull(cfg, ctx, quiet, apikey):
 
     click.echo('Saving files....')
     save_json_files(cfg, data)
+
+
+@cli.command()
+@click.pass_context
+@with_config
+def sync(cfg, ctx):
+    """Sync YAML/JSON data."""
+    yd = YAML_Data(cfg)
+    yd.sync()
+
+
+@cli.command()
+@click.argument('name', required=False)
+@click.option('--split/--no-split', default=False)
+@click.option('--combine/--no-combine', default=False)
+@click.pass_context
+@with_config
+def yaml(cfg, ctx, name, split, combine):
+    """Sync YAML/JSON data."""
+    if split and combine:
+        print('Specify only one of --split and --combine')
+        return
+    if (split or combine) and not name:
+        print('Specify a name with --name NAME, when splitting or combining')
+        return
+    yd = YAML_Data(cfg)
+    combine_name = None
+    if name:
+        combine_name = os.path.join(cfg.get('project', 'projectpath'), name)
+    if split:
+        yd.split(combine_name)
+    elif combine:
+        yd.combine(combine_name)
+    else:
+        yd.edit(combine_name)
 
 
 def exception_handler(exc_type, exc_value, exc_tb):
